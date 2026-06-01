@@ -1,0 +1,4 @@
+Alert: Rs. 150.00 spent on Swiggy daily delights.
+Txn: INR 2,400.00 debited for Amazon India shopping.
+Debited: Rs.450.00 via Uber India ride.
+Paid Rs 1,200 to Electricity Board power bill.
