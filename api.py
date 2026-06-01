@@ -3,25 +3,33 @@ import re
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from google import genai
 from pydantic import BaseModel
 
 app = FastAPI(title="Hisab Live Engine")
+client = genai.Client()
 
-# Define what a single incoming message looks like
 class IncomingSMS(BaseModel):
     text: str
 
-# Helper Parsing Functions
-def automatic_categorizer(text):
-    text = text.lower()
-    if any(w in text for w in ["swiggy", "zomato", "restaurant", "dine", "food"]):
-        return "Food"
-    if any(w in text for w in ["uber", "ola", "metro", "fuel", "petrol", "auto"]):
-        return "Transport"
-    if any(w in text for w in ["amazon", "flipkart", "blinkit", "myntra", "shop"]):
-        return "Shopping"
-    if any(w in text for w in ["electricity", "power", "bill", "utilities", "recharge"]):
-        return "Utilities"
+def ai_production_categorizer(text: str) -> str:
+    prompt = f"""
+    Analyze the bank merchant context in this SMS and classify it into exactly ONE of these categories:
+    Food, Transport, Shopping, Utilities, Medical, Entertainment, Others.
+    Respond with ONLY the category name. Do not include extra text.
+    Transaction Message: "{text}"
+    """
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        category = response.text.strip()
+        valid = ["Food", "Transport", "Shopping", "Utilities", "Medical", "Entertainment", "Others"]
+        if category in valid:
+            return category
+    except Exception as e:
+        print(f"AI Error: {e}")
     return "Others"
 
 def extract_amount(text):
@@ -31,14 +39,11 @@ def extract_amount(text):
     return 0.0
 
 def extract_message_datetime(text):
+    match_colon_date = re.search(r"\d{4}-\d{2}-\d{2}:\d{2}:\d{2}:\d{2}", text)
+    if match_colon_date:
+        return match_colon_date.group(0).replace(":", " ", 1)
     match1 = re.search(r"\d{2}-\d{2}-\d{2,4}\s+\d{2}:\d{2}:\d{2}", text)
     if match1: return match1.group(0)
-    match2 = re.search(r"\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2}", text)
-    if match2: return match2.group(0)
-    match3 = re.search(r"\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}", text)
-    if match3: return match3.group(0)
-    match4 = re.search(r"\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}", text)
-    if match4: return match4.group(0)
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def get_db_summary():
@@ -47,18 +52,17 @@ def get_db_summary():
     cursor.execute("SELECT category, SUM(amount), COUNT(*) FROM expenses GROUP BY category")
     rows = cursor.fetchall()
     conn.close()
+    # Explicit mapping to prevent data packaging indexing errors
     return [{"category": r[0], "total_amount": r[1], "transaction_count": r[2]} for r in rows]
 
-# NEW ENDPOINT: Process a single live message
 @app.post("/process-sms")
 def process_single_sms(sms: IncomingSMS):
     amount = extract_amount(sms.text)
-    category = automatic_categorizer(sms.text)
     msg_time = extract_message_datetime(sms.text)
+    category = ai_production_categorizer(sms.text)
     
     conn = sqlite3.connect("hisab.db")
     cursor = conn.cursor()
-    
     try:
         cursor.execute(
             "INSERT INTO expenses (date, description, amount, category) VALUES (?, ?, ?, ?)",
@@ -67,19 +71,10 @@ def process_single_sms(sms: IncomingSMS):
         conn.commit()
         status = "Saved successfully"
     except sqlite3.IntegrityError:
-        status = "Skipped (Duplicate transaction)"
+        status = "Skipped (Duplicate)"
     finally:
         conn.close()
-        
-    return {
-        "status": status,
-        "parsed_data": {
-            "time": msg_time,
-            "amount": amount,
-            "category": category,
-            "text": sms.text
-        }
-    }
+    return {"status": status, "parsed_data": {"time": msg_time, "amount": amount, "category": category}}
 
 @app.get("/summary")
 def read_summary():
@@ -88,14 +83,23 @@ def read_summary():
 @app.get("/", response_class=HTMLResponse)
 def home_dashboard():
     summary_data = get_db_summary()
+    
     tx_conn = sqlite3.connect("hisab.db")
     tx_cursor = tx_conn.cursor()
     tx_cursor.execute("SELECT date, description, amount, category FROM expenses ORDER BY id DESC")
     all_tx = tx_cursor.fetchall()
     tx_conn.close()
 
-    summary_rows = "".join(f"<tr><td><b>{s['category']}</b></td><td>₹{s['total_amount']:.2f}</td><td>{s['transaction_count']}</td></tr>" for s in summary_data)
-    tx_rows = "".join(f"<tr><td>{t[0]}</td><td>{t[1]}</td><td>₹{t[2]:.2f}</td><td><span class='badge'>{t[3]}</span></td></tr>" for t in all_tx)
+    # Dynamic safe text builders using exact indexes
+    summary_rows = "".join(
+        f"<tr><td><b>{s['category']}</b></td><td>₹{s['total_amount']:.2f}</td><td>{s['transaction_count']}</td></tr>" 
+        for s in summary_data
+    )
+    
+    tx_rows = "".join(
+        f"<tr><td>{t[0]}</td><td>{t[1]}</td><td>₹{t[2]:.2f}</td><td><span class='badge'>{t[3]}</span></td></tr>" 
+        for t in all_tx
+    )
 
     return f"""
     <html>
@@ -122,7 +126,3 @@ def home_dashboard():
         </body>
     </html>
     """
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
