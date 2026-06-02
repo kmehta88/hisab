@@ -1,0 +1,5 @@
+streamlit
+# Add any other libraries your 'hisab' code will actually use, for example:
+# pandas
+# matplotlib
+# plotly
