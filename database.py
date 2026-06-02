@@ -48,15 +48,13 @@
 
 
 import streamlit as st
+from sqlalchemy import text # <-- Crucial import for modern Streamlit SQL connections
 
-# 1. Initialize the Secure Cloud Database Connection
-# This automatically reads from the [connections.postgresql] secret you saved
 db_conn = st.connection("postgresql", type="sql")
 
 def init_db():
-    # PostgreSQL syntax uses SERIAL instead of AUTOINCREMENT
     with db_conn.session as session:
-        session.execute("""
+        session.execute(text("""
             CREATE TABLE IF NOT EXISTS expenses (
                 id SERIAL PRIMARY KEY,
                 date TEXT,
@@ -65,34 +63,31 @@ def init_db():
                 category TEXT,
                 UNIQUE(date, description)
             );
-        """)
+        """))
         session.commit()
 
-def add_expense(date, description, amount, category):
-    try:
-        with db_conn.session as session:
-            session.execute(
-                """
+def add_expense(msg_time, sms_text, amount, category):
+    with db_conn.session as session:
+        session.execute(
+            text("""
                 INSERT INTO expenses (date, description, amount, category) 
-                VALUES (:date, :description, :amount, :category)
-                """,
-                {"date": date, "description": description, "amount": amount, "category": category}
-            )
-            session.commit()
-        return True
-    except Exception as e:
-        # Handles duplicate entries safely (PostgreSQL throws UniqueViolation errors)
-        return False
+                VALUES (:date, :description, :amount, :category);
+            """),
+            {"date": msg_time, "description": sms_text, "amount": amount, "category": category}
+        )
+        session.commit()
 
-def get_summary_data():
-    # Streamlit sql connection allows direct querying into a clean pandas DataFrame
-    query = """
+def fetch_summary():
+    # ttl="0m" tells Streamlit NEVER to cache this read, so a page reload shows fresh data instantly
+    return db_conn.query(text("""
         SELECT category, SUM(amount) as total_amount, COUNT(*) as transaction_count 
         FROM expenses 
-        GROUP BY category
-    """
-    return db_conn.query(query, ttl="0m") # ttl="0m" forces fresh data fetch every time
+        GROUP BY category;
+    """), ttl="0m")
 
-def get_all_transactions():
-    query = "SELECT date, description, amount, category FROM expenses ORDER BY id DESC"
-    return db_conn.query(query, ttl="0m")
+def fetch_all_transactions():
+    return db_conn.query(text("""
+        SELECT date as "Timestamp", description as "Message Text", amount as "Amount (₹)", category as "Category" 
+        FROM expenses 
+        ORDER BY id DESC;
+    """), ttl="0m")
