@@ -2,16 +2,3 @@ Alert: Rs. 150.00 spent on Swiggy daily delights.
 Txn: INR 2,400.00 debited for Amazon India shopping.
 Debited: Rs.450.00 via Uber India ride.
 Paid Rs 1,200 to Electricity Board power bill.
-
-#Running APP#
-
-python -m venv venv    
-source venv/bin/activate      
-pip install pypdf fastapi uvicorn  
-pip install google-genai  
-
-
-source venv/bin/activate
-export GEMINI_API_KEY="AIzaSyDe07HTim1_aYHYkkDiJJ5_aZNJwaz57FM"
-python3 api.py                                     
-uvicorn api:app --host 0.0.0.0 --port 8000 --reload
