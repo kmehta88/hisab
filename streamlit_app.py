@@ -1,4 +1,12 @@
 import streamlit as st
+from database import init_db, add_expense, get_all_expenses
+
+# Initialize database on app startup
+init_db()
+
+# App interface
+st.title("Hisab Tracker")
+# ... your inputs here ...
 
 st.set_page_config(page_title="Hisab App", page_icon="🧮")
 
