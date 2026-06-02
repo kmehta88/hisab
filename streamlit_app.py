@@ -86,18 +86,20 @@ if submit_button and sms_text:
     except Exception as e:
         st.warning("⚠️ Skipped: Duplicate transaction message caught or database connection hiccup.")
 
-# Fetch Live Dashboard Data using clean SQLAlchemy text blocks
-summary_df = db_conn.query(text("""
+# --- FETCH LIVE DASHBOARD DATA ---
+# Strip out the 'text(...)' function wrapper completely here
+
+summary_df = db_conn.query("""
     SELECT category, SUM(amount) as total_amount, COUNT(*) as transaction_count 
     FROM expenses 
     GROUP BY category;
-"""), ttl="0m")
+""", ttl="0m")
 
-tx_df = db_conn.query(text("""
+tx_df = db_conn.query("""
     SELECT date as "Timestamp", description as "Message Text", amount as "Amount (₹)", category as "Category" 
     FROM expenses 
     ORDER BY id DESC;
-"""), ttl="0m")
+""", ttl="0m")
 
 # Display Category Summary Cards
 st.write("---")
